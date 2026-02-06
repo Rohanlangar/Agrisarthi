@@ -113,7 +113,7 @@ USE_I18N = True
 USE_TZ = True
 
 # URL Configuration
-APPEND_SLASH = False
+APPEND_SLASH = True
 
 # Static files
 STATIC_URL = 'static/'

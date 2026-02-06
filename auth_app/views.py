@@ -9,9 +9,10 @@ from rest_framework.response import Response
 from rest_framework.permissions import AllowAny
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from .serializers import PhoneLoginSerializer, OTPVerifySerializer
+from .serializers import PhoneLoginSerializer, OTPVerifySerializer, FarmerRegistrationSerializer
 from .services import OTPService
 from farmers.models import Farmer
+from documents.models import Document
 
 
 class LoginView(APIView):
@@ -108,6 +109,107 @@ class VerifyOTPView(APIView):
             }
         }, status=status.HTTP_200_OK)
     
+    def _generate_tokens(self, farmer):
+        """Generate JWT tokens for farmer"""
+        refresh = RefreshToken()
+        refresh['farmer_id'] = str(farmer.id)
+        refresh['phone'] = farmer.phone
+        
+        return {
+            'access': str(refresh.access_token),
+            'refresh': str(refresh)
+        }
+
+
+class RegisterView(APIView):
+    """
+    POST /api/auth/register/
+    Register a new farmer or update existing one with full profile
+    """
+    permission_classes = [AllowAny]
+    
+    def post(self, request):
+        serializer = FarmerRegistrationSerializer(data=request.data)
+        
+        if not serializer.is_valid():
+            return Response({
+                'success': False,
+                'message': 'Invalid input',
+                'errors': serializer.errors
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        data = serializer.validated_data
+        phone = data['phone']
+        otp = data['otp']
+        
+        # Verify OTP
+        if not OTPService.verify_otp(phone, otp):
+            return Response({
+                'success': False,
+                'message': 'Invalid or expired OTP'
+            }, status=status.HTTP_401_UNAUTHORIZED)
+            
+        # Check if farmer exists
+        farmer = Farmer.objects.filter(phone=phone).first()
+        
+        if farmer and farmer.is_profile_complete:
+            # If farmer exists and profile is complete, return error
+            # They should use login instead
+            return Response({
+                'success': False,
+                'message': 'User already registered. Please login instead.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+            
+        if not farmer:
+            farmer = Farmer(phone=phone)
+            
+        # Update/Set profile details
+        farmer.name = data['name']
+        farmer.state = data['state']
+        farmer.district = data['district']
+        farmer.village = data.get('village', '')
+        farmer.land_size = data['land_size']
+        farmer.crop_type = data['crop_type']
+        farmer.language = data.get('language', 'hindi')
+        
+        farmer.save()
+        
+        # Handle Documents
+        documents_data = data.get('documents', [])
+        if documents_data:
+            # Delete existing documents if updating (optional strategy)
+            # Document.objects.filter(farmer=farmer).delete() 
+            
+            new_docs = []
+            for doc in documents_data:
+                new_docs.append(Document(
+                    farmer=farmer,
+                    document_type=doc['document_type'],
+                    document_url=doc['document_url']
+                ))
+            
+            if new_docs:
+                Document.objects.bulk_create(new_docs)
+        
+        # Generate tokens
+        # We can reuse the Logic from VerifyOTPView if we move it to a helper or mixin
+        # For now, duplicating the simple logic or calling helper if available methods
+        tokens = self._generate_tokens(farmer)
+        
+        return Response({
+            'success': True,
+            'message': 'Registration successful',
+            'data': {
+                'access_token': tokens['access'],
+                'refresh_token': tokens['refresh'],
+                'farmer_id': str(farmer.id),
+                'profile': {
+                    'name': farmer.name,
+                    'phone': farmer.phone
+                }
+            }
+        }, status=status.HTTP_201_CREATED)
+
     def _generate_tokens(self, farmer):
         """Generate JWT tokens for farmer"""
         refresh = RefreshToken()

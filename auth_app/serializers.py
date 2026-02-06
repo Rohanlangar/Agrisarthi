@@ -54,3 +54,44 @@ class TokenResponseSerializer(serializers.Serializer):
     refresh_token = serializers.CharField()
     farmer_id = serializers.UUIDField()
     is_new_user = serializers.BooleanField()
+
+
+class FarmerRegistrationSerializer(serializers.Serializer):
+    """
+    Serializer for farmer registration (initial profile creation).
+    Includes OTP verification and document submission.
+    """
+    # Auth fields
+    phone = serializers.CharField(max_length=15, required=True)
+    otp = serializers.CharField(max_length=6, min_length=4, required=True)
+    
+    # Profile fields
+    name = serializers.CharField(max_length=255, required=True)
+    state = serializers.CharField(max_length=100, required=True)
+    district = serializers.CharField(max_length=100, required=True)
+    village = serializers.CharField(max_length=100, required=False, allow_blank=True)
+    land_size = serializers.DecimalField(max_digits=10, decimal_places=2, required=True)
+    crop_type = serializers.CharField(max_length=255, required=True)
+    language = serializers.CharField(max_length=50, required=False, default='hindi')
+    
+    # Documents
+    documents = serializers.ListField(
+        child=serializers.DictField(),
+        required=False,
+        allow_empty=True
+    )
+
+    def validate_phone(self, value):
+        """Validate phone number format"""
+        phone = re.sub(r'[\s\-]', '', value)
+        if phone.startswith('+91'):
+            phone = phone[3:]
+        elif phone.startswith('91') and len(phone) == 12:
+            phone = phone[2:]
+        return phone
+
+    def validate_document(self, value):
+        """Validate document structure"""
+        if 'document_type' not in value or 'document_url' not in value:
+            raise serializers.ValidationError("Document must have 'document_type' and 'document_url'")
+        return value

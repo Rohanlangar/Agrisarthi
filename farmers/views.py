@@ -37,7 +37,7 @@ class ProfileView(APIView):
 
     def put(self, request, farmer_id):
         # Only allow updating own profile
-        if str(request.user.id) != farmer_id:
+        if str(request.user.id) != str(farmer_id):
             return Response({
                 'success': False,
                 'message': 'You can only update your own profile'
