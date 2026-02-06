@@ -3,6 +3,7 @@ Auth App - Views
 Phone OTP-based authentication endpoints
 """
 
+import logging
 from rest_framework import status
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -13,6 +14,9 @@ from .serializers import PhoneLoginSerializer, OTPVerifySerializer, FarmerRegist
 from .services import OTPService
 from farmers.models import Farmer
 from documents.models import Document
+from core.storage import create_farmer_bucket
+
+logger = logging.getLogger(__name__)
 
 
 class LoginView(APIView):
@@ -94,6 +98,12 @@ class VerifyOTPView(APIView):
             }
         )
         
+        # Create storage bucket for new farmers
+        if is_new:
+            bucket_created = create_farmer_bucket(str(farmer.id))
+            if not bucket_created:
+                logger.warning(f"Failed to create storage bucket for farmer {farmer.id}")
+        
         # Generate JWT tokens
         tokens = self._generate_tokens(farmer)
         
@@ -172,7 +182,14 @@ class RegisterView(APIView):
         farmer.crop_type = data['crop_type']
         farmer.language = data.get('language', 'hindi')
         
+        is_new_farmer = farmer.pk is None or not Farmer.objects.filter(pk=farmer.pk).exists()
         farmer.save()
+        
+        # Create storage bucket for new farmers
+        if is_new_farmer:
+            bucket_created = create_farmer_bucket(str(farmer.id))
+            if not bucket_created:
+                logger.warning(f"Failed to create storage bucket for farmer {farmer.id}")
         
         # Handle Documents
         documents_data = data.get('documents', [])
