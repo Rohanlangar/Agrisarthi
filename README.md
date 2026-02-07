@@ -1,4 +1,4 @@
-# AIISMS - Voice-based Farmer Scheme Access App
+# AISSMS - Voice-based Farmer Scheme Access App
 
 [![Django](https://img.shields.io/badge/Django-4.2+-green.svg)](https://www.djangoproject.com/)
 [![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)](https://www.python.org/)
@@ -195,17 +195,22 @@ Content-Type: application/json
 
 ### Document Management
 
-#### Upload Document
+#### Upload Documents
 ```http
 POST /api/documents/
 Authorization: Bearer <token>
 Content-Type: multipart/form-data
 
-file: <document_file>
-document_type: aadhaar
+aadhaar: <aadhaar_file>
+pan_card: <pan_card_file>
+land_certificate: <land_certificate_file>
+seven_twelve: <seven_twelve_file>
+eight_a: <eight_a_file>
+bank_passbook: <bank_passbook_file>
+other: <optional_other_file>
 ```
 
-**Note:** File uploads are mandatory. Files are automatically stored in farmer-specific Supabase storage buckets, and the URL is generated and stored in the database.
+**Note:** All compulsory documents (aadhaar, pan_card, land_certificate, seven_twelve, eight_a, bank_passbook) must be uploaded in a single request. Files are automatically renamed to {document_type}.{extension} and stored in farmer-specific Supabase storage buckets. The URL is generated and stored in the database. Optional 'other' document can be included.
 
 #### Get Farmer Documents
 ```http
