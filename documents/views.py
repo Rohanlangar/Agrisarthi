@@ -52,7 +52,7 @@ class DocumentListView(APIView):
                 'success': False,
                 'message': 'Farmer not found'
             }, status=status.HTTP_404_NOT_FOUND)
-        
+
         # Get document type from request
         document_type = request.data.get('document_type')
         if not document_type:
@@ -60,38 +60,35 @@ class DocumentListView(APIView):
                 'success': False,
                 'message': 'document_type is required'
             }, status=status.HTTP_400_BAD_REQUEST)
-        
-        # Check if file is provided - upload to Supabase
+
+        # Require file upload
         file = request.FILES.get('file')
-        document_url = request.data.get('document_url', '')
-        
-        if file:
-            # Generate unique filename
-            file_ext = file.name.split('.')[-1] if '.' in file.name else 'bin'
-            filename = f"{document_type}/{uuid.uuid4()}.{file_ext}"
-            
-            # Upload to farmer's bucket
-            document_url = upload_document(str(farmer.id), file, filename)
-            
-            if not document_url:
-                return Response({
-                    'success': False,
-                    'message': 'Failed to upload file to storage'
-                }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-        
+        if not file:
+            return Response({
+                'success': False,
+                'message': 'File upload is required'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Generate unique filename
+        file_ext = file.name.split('.')[-1] if '.' in file.name else 'bin'
+        filename = f"{document_type}/{uuid.uuid4()}.{file_ext}"
+
+        # Upload to farmer's bucket
+        document_url = upload_document(str(farmer.id), file, filename)
+
         if not document_url:
             return Response({
                 'success': False,
-                'message': 'Either file or document_url is required'
-            }, status=status.HTTP_400_BAD_REQUEST)
-        
+                'message': 'Failed to upload file to storage'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
         # Create document record
         document = Document.objects.create(
             farmer=farmer,
             document_type=document_type,
             document_url=document_url
         )
-        
+
         return Response({
             'success': True,
             'message': 'Document uploaded successfully',
@@ -208,20 +205,44 @@ class DocumentByFarmerView(APIView):
                 'message': 'Farmer not found'
             }, status=status.HTTP_404_NOT_FOUND)
 
-        serializer = DocumentCreateSerializer(data=request.data)
-        if serializer.is_valid():
-            document = Document.objects.create(
-                farmer=target_farmer,
-                **serializer.validated_data
-            )
+        # Get document type from request
+        document_type = request.data.get('document_type')
+        if not document_type:
             return Response({
-                'success': True,
-                'message': 'Document uploaded successfully',
-                'data': DocumentSerializer(document).data
-            }, status=status.HTTP_201_CREATED)
+                'success': False,
+                'message': 'document_type is required'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Require file upload
+        file = request.FILES.get('file')
+        if not file:
+            return Response({
+                'success': False,
+                'message': 'File upload is required'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Generate unique filename
+        file_ext = file.name.split('.')[-1] if '.' in file.name else 'bin'
+        filename = f"{document_type}/{uuid.uuid4()}.{file_ext}"
+
+        # Upload to farmer's bucket
+        document_url = upload_document(str(target_farmer.id), file, filename)
+
+        if not document_url:
+            return Response({
+                'success': False,
+                'message': 'Failed to upload file to storage'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        # Create document record
+        document = Document.objects.create(
+            farmer=target_farmer,
+            document_type=document_type,
+            document_url=document_url
+        )
 
         return Response({
-            'success': False,
-            'message': 'Invalid data',
-            'errors': serializer.errors
-        }, status=status.HTTP_400_BAD_REQUEST)
+            'success': True,
+            'message': 'Document uploaded successfully',
+            'data': DocumentSerializer(document).data
+        }, status=status.HTTP_201_CREATED)
