@@ -1,6 +1,6 @@
-# TODO: Add option to get documents by farmer ID and upload documents to particular farmer ID
+# TODO: Rename uploaded document files to the value of 'document_type'
 
 ## Steps to Complete:
-- [x] Add DocumentByFarmerView to documents/views.py
-- [x] Update documents/urls.py to change detail URL and add new URL for DocumentByFarmerView
-- [x] Add POST method to DocumentByFarmerView for uploading documents to a specific farmer ID
+- [x] Update filename generation in DocumentListView.post() in documents/views.py
+- [x] Update filename generation in DocumentByFarmerView.post() in documents/views.py
+- [ ] Test the upload functionality to ensure files are renamed correctly

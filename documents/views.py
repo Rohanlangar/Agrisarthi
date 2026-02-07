@@ -69,9 +69,9 @@ class DocumentListView(APIView):
                 'message': 'File upload is required'
             }, status=status.HTTP_400_BAD_REQUEST)
 
-        # Generate unique filename
+        # Generate filename using document_type
         file_ext = file.name.split('.')[-1] if '.' in file.name else 'bin'
-        filename = f"{document_type}/{uuid.uuid4()}.{file_ext}"
+        filename = f"{document_type}/{document_type}.{file_ext}"
 
         # Upload to farmer's bucket
         document_url = upload_document(str(farmer.id), file, filename)
@@ -221,9 +221,9 @@ class DocumentByFarmerView(APIView):
                 'message': 'File upload is required'
             }, status=status.HTTP_400_BAD_REQUEST)
 
-        # Generate unique filename
+        # Generate filename using document_type
         file_ext = file.name.split('.')[-1] if '.' in file.name else 'bin'
-        filename = f"{document_type}/{uuid.uuid4()}.{file_ext}"
+        filename = f"{document_type}/{document_type}.{file_ext}"
 
         # Upload to farmer's bucket
         document_url = upload_document(str(target_farmer.id), file, filename)
