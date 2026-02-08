@@ -14,27 +14,43 @@ from core.authentication import get_farmer_from_token
 
 class ProfileView(APIView):
     """
-    GET /api/farmers/profile/
-    PUT /api/farmers/profile/
-    
-    Get or update current farmer's profile
+    GET /api/farmers/profile/<farmer_id>/
+    PUT /api/farmers/profile/<farmer_id>/
+
+    Get or update specific farmer's profile by ID
     """
     permission_classes = [IsAuthenticated]
-    
-    def get(self, request):
-        # Farmer is already authenticated via FarmerAuthentication
-        farmer = request.user
-        
-        serializer = FarmerSerializer(farmer)
-        return Response({
-            'success': True,
-            'data': serializer.data
-        })
-    
-    def put(self, request):
-        # Farmer is already authenticated via FarmerAuthentication
-        farmer = request.user
-        
+
+    def get(self, request, farmer_id):
+        try:
+            farmer = Farmer.objects.get(id=farmer_id)
+            serializer = FarmerSerializer(farmer)
+            return Response({
+                'success': True,
+                'data': serializer.data
+            })
+        except Farmer.DoesNotExist:
+            return Response({
+                'success': False,
+                'message': 'Farmer not found'
+            }, status=status.HTTP_404_NOT_FOUND)
+
+    def put(self, request, farmer_id):
+        # Only allow updating own profile
+        if str(request.user.id) != str(farmer_id):
+            return Response({
+                'success': False,
+                'message': 'You can only update your own profile'
+            }, status=status.HTTP_403_FORBIDDEN)
+
+        try:
+            farmer = Farmer.objects.get(id=farmer_id)
+        except Farmer.DoesNotExist:
+            return Response({
+                'success': False,
+                'message': 'Farmer not found'
+            }, status=status.HTTP_404_NOT_FOUND)
+
         serializer = FarmerUpdateSerializer(farmer, data=request.data, partial=True)
         if serializer.is_valid():
             serializer.save()
@@ -43,7 +59,7 @@ class ProfileView(APIView):
                 'message': 'Profile updated successfully',
                 'data': FarmerSerializer(farmer).data
             })
-        
+
         return Response({
             'success': False,
             'message': 'Invalid data',

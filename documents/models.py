@@ -1,7 +1,6 @@
 """
 Documents App - Document Model
 """
-
 import uuid
 from django.db import models
 
@@ -14,10 +13,11 @@ class Document(models.Model):
     
     DOCUMENT_TYPES = [
         ('aadhaar', 'Aadhaar Card'),
+        ('pan_card', 'PAN Card'),
         ('land_certificate', 'Land Certificate'),
+        ('seven_twelve', '7/12 Extract'),
+        ('eight_a', '8A Document'),
         ('bank_passbook', 'Bank Passbook'),
-        ('income_certificate', 'Income Certificate'),
-        ('caste_certificate', 'Caste Certificate'),
         ('other', 'Other'),
     ]
     

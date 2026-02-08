@@ -112,6 +112,9 @@ TIME_ZONE = 'Asia/Kolkata'
 USE_I18N = True
 USE_TZ = True
 
+# URL Configuration
+APPEND_SLASH = True
+
 # Static files
 STATIC_URL = 'static/'
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
@@ -168,6 +171,7 @@ CORS_ALLOWED_ORIGINS = [
 # Supabase Configuration (optional, for storage)
 SUPABASE_URL = config('SUPABASE_URL', default='')
 SUPABASE_KEY = config('SUPABASE_KEY', default='')
+SUPABASE_SERVICE_KEY = config('SUPABASE_SERVICE_KEY', default='')
 
 # OTP Settings
 OTP_EXPIRY_MINUTES = 5
