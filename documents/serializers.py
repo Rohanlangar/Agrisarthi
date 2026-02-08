@@ -21,11 +21,11 @@ class DocumentSerializer(serializers.ModelSerializer):
 
 class DocumentCreateSerializer(serializers.ModelSerializer):
     """Serializer for creating/uploading documents"""
-    
+
     class Meta:
         model = Document
-        fields = ['document_type', 'document_url']
-    
+        fields = ['document_type']
+
     def validate_document_type(self, value):
         valid_types = [choice[0] for choice in Document.DOCUMENT_TYPES]
         if value not in valid_types:

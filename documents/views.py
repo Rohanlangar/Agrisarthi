@@ -52,50 +52,59 @@ class DocumentListView(APIView):
                 'success': False,
                 'message': 'Farmer not found'
             }, status=status.HTTP_404_NOT_FOUND)
-        
-        # Get document type from request
-        document_type = request.data.get('document_type')
-        if not document_type:
+
+        # Define compulsory document types
+        compulsory_types = ['aadhaar', 'pan_card', 'land_certificate', 'seven_twelve', 'eight_a', 'bank_passbook']
+
+        # Check if all compulsory documents are provided
+        missing_types = [doc_type for doc_type in compulsory_types if doc_type not in request.FILES]
+        if missing_types:
             return Response({
                 'success': False,
-                'message': 'document_type is required'
+                'message': f'Missing compulsory documents: {", ".join(missing_types)}'
             }, status=status.HTTP_400_BAD_REQUEST)
-        
-        # Check if file is provided - upload to Supabase
-        file = request.FILES.get('file')
-        document_url = request.data.get('document_url', '')
-        
-        if file:
-            # Generate unique filename
+
+        # Collect all document types to upload (compulsory + optional 'other' if present)
+        document_types_to_upload = compulsory_types + (['other'] if 'other' in request.FILES else [])
+
+        uploaded_documents = []
+
+        # Upload each document
+        for document_type in document_types_to_upload:
+            file = request.FILES[document_type]
+
+            # Generate filename using document_type
             file_ext = file.name.split('.')[-1] if '.' in file.name else 'bin'
-            filename = f"{document_type}/{uuid.uuid4()}.{file_ext}"
-            
+            filename = f"{document_type}.{file_ext}"
+
             # Upload to farmer's bucket
             document_url = upload_document(str(farmer.id), file, filename)
-            
+
             if not document_url:
+                # If any upload fails, return error (no partial uploads)
                 return Response({
                     'success': False,
-                    'message': 'Failed to upload file to storage'
+                    'message': f'Failed to upload {document_type} to storage'
                 }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-        
-        if not document_url:
-            return Response({
-                'success': False,
-                'message': 'Either file or document_url is required'
-            }, status=status.HTTP_400_BAD_REQUEST)
-        
-        # Create document record
-        document = Document.objects.create(
-            farmer=farmer,
-            document_type=document_type,
-            document_url=document_url
-        )
-        
+
+            # Create document record
+            document = Document.objects.create(
+                farmer=farmer,
+                document_type=document_type,
+                document_url=document_url
+            )
+            uploaded_documents.append(document)
+
+        # Serialize all uploaded documents
+        serializer = DocumentSerializer(uploaded_documents, many=True)
+
         return Response({
             'success': True,
-            'message': 'Document uploaded successfully',
-            'data': DocumentSerializer(document).data
+            'message': 'All documents uploaded successfully',
+            'data': {
+                'documents': serializer.data,
+                'count': len(uploaded_documents)
+            }
         }, status=status.HTTP_201_CREATED)
 
 
@@ -208,20 +217,56 @@ class DocumentByFarmerView(APIView):
                 'message': 'Farmer not found'
             }, status=status.HTTP_404_NOT_FOUND)
 
-        serializer = DocumentCreateSerializer(data=request.data)
-        if serializer.is_valid():
+        # Define compulsory document types
+        compulsory_types = ['aadhaar', 'pan_card', 'land_certificate', 'seven_twelve', 'eight_a', 'bank_passbook']
+
+        # Check if all compulsory documents are provided
+        missing_types = [doc_type for doc_type in compulsory_types if doc_type not in request.FILES]
+        if missing_types:
+            return Response({
+                'success': False,
+                'message': f'Missing compulsory documents: {", ".join(missing_types)}'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Collect all document types to upload (compulsory + optional 'other' if present)
+        document_types_to_upload = compulsory_types + (['other'] if 'other' in request.FILES else [])
+
+        uploaded_documents = []
+
+        # Upload each document
+        for document_type in document_types_to_upload:
+            file = request.FILES[document_type]
+
+            # Generate filename using document_type
+            file_ext = file.name.split('.')[-1] if '.' in file.name else 'bin'
+            filename = f"{document_type}.{file_ext}"
+
+            # Upload to farmer's bucket
+            document_url = upload_document(str(target_farmer.id), file, filename)
+
+            if not document_url:
+                # If any upload fails, return error (no partial uploads)
+                return Response({
+                    'success': False,
+                    'message': f'Failed to upload {document_type} to storage'
+                }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+            # Create document record
             document = Document.objects.create(
                 farmer=target_farmer,
-                **serializer.validated_data
+                document_type=document_type,
+                document_url=document_url
             )
-            return Response({
-                'success': True,
-                'message': 'Document uploaded successfully',
-                'data': DocumentSerializer(document).data
-            }, status=status.HTTP_201_CREATED)
+            uploaded_documents.append(document)
+
+        # Serialize all uploaded documents
+        serializer = DocumentSerializer(uploaded_documents, many=True)
 
         return Response({
-            'success': False,
-            'message': 'Invalid data',
-            'errors': serializer.errors
-        }, status=status.HTTP_400_BAD_REQUEST)
+            'success': True,
+            'message': 'All documents uploaded successfully',
+            'data': {
+                'documents': serializer.data,
+                'count': len(uploaded_documents)
+            }
+        }, status=status.HTTP_201_CREATED)
