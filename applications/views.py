@@ -104,7 +104,10 @@ class GenerateFormView(APIView):
         application, created = AutoFillService.create_draft_application(farmer, scheme)
         
         if not created and application:
-            # Application exists - return its current state
+            # Application exists - refresh documents and return updated state
+            AutoFillService.refresh_documents(application)
+            application.refresh_from_db()  # Reload from database
+            
             return Response({
                 'success': True,
                 'message': 'Application already exists',
