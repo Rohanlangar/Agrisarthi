@@ -173,6 +173,11 @@ SUPABASE_URL = config('SUPABASE_URL', default='')
 SUPABASE_KEY = config('SUPABASE_KEY', default='')
 SUPABASE_SERVICE_KEY = config('SUPABASE_SERVICE_KEY', default='')
 
+# AI Configuration
+GROQ_API_KEY = config('GROQ_API_KEY', default='')
+OPENAI_API_KEY = config('OPENAI_API_KEY', default='')
+SARVAM_API_KEY = config('SARVAM_API_KEY', default='')
+
 # OTP Settings
 OTP_EXPIRY_MINUTES = 5
 OTP_LENGTH = 6

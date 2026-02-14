@@ -11,19 +11,15 @@ class PhoneLoginSerializer(serializers.Serializer):
     phone = serializers.CharField(max_length=15, required=True)
     
     def validate_phone(self, value):
-        """Validate phone number format"""
-        # Remove any spaces or dashes
-        phone = re.sub(r'[\s\-]', '', value)
-        
-        # Check if it's a valid Indian phone number (10 digits, optionally with +91)
-        if phone.startswith('+91'):
-            phone = phone[3:]
-        elif phone.startswith('91') and len(phone) == 12:
+        """Standardize to 10-digit Indian phone number"""
+        phone = re.sub(r'[\s\-\(\)\+]', '', value)
+        if phone.startswith('91') and len(phone) == 12:
             phone = phone[2:]
-        
+        elif len(phone) > 10:
+            phone = phone[-10:]
+            
         if not phone.isdigit() or len(phone) != 10:
-            raise serializers.ValidationError("Invalid phone number. Please enter a 10-digit Indian phone number.")
-        
+            raise serializers.ValidationError("Please enter a valid 10-digit phone number.")
         return phone
 
 
@@ -33,12 +29,12 @@ class OTPVerifySerializer(serializers.Serializer):
     otp = serializers.CharField(max_length=6, min_length=4, required=True)
     
     def validate_phone(self, value):
-        """Validate phone number format"""
-        phone = re.sub(r'[\s\-]', '', value)
-        if phone.startswith('+91'):
-            phone = phone[3:]
-        elif phone.startswith('91') and len(phone) == 12:
+        """Standardize to 10-digit Indian phone number"""
+        phone = re.sub(r'[\s\-\(\)\+]', '', value)
+        if phone.startswith('91') and len(phone) == 12:
             phone = phone[2:]
+        elif len(phone) > 10:
+            phone = phone[-10:]
         return phone
     
     def validate_otp(self, value):
@@ -82,12 +78,12 @@ class FarmerRegistrationSerializer(serializers.Serializer):
     )
 
     def validate_phone(self, value):
-        """Validate phone number format"""
-        phone = re.sub(r'[\s\-]', '', value)
-        if phone.startswith('+91'):
-            phone = phone[3:]
-        elif phone.startswith('91') and len(phone) == 12:
+        """Standardize to 10-digit Indian phone number"""
+        phone = re.sub(r'[\s\-\(\)\+]', '', value)
+        if phone.startswith('91') and len(phone) == 12:
             phone = phone[2:]
+        elif len(phone) > 10:
+            phone = phone[-10:]
         return phone
 
     def validate_document(self, value):
