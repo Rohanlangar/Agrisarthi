@@ -16,6 +16,7 @@ class Intent(Enum):
     CHECK_STATUS = "check_status"
     VIEW_PROFILE = "view_profile"
     LIST_APPLICATIONS = "list_applications"
+    VIEW_DOCUMENTS = "view_documents"
     HELP = "help"
     UNKNOWN = "unknown"
 
@@ -110,9 +111,28 @@ class IntentParser:
                 r'(मेरे|मेरी).*(सारे|सभी).*(आवेदन)',
                 r'(आवेदन|अप्लीकेशन).*(लिस्ट|सूची)',
             ],
+            'marathi': [
+                r'(माझे|माझी).*(सर्व|सगळे).*(अर्ज)',
+                r'अर्ज.*(यादी|लिस्ट)',
+            ],
             'english': [
                 r'(all|list).*(my)?.*(application)',
                 r'my.*applications',
+            ]
+        },
+        Intent.VIEW_DOCUMENTS: {
+            'hindi': [
+                r'(मेरे|मेरी).*(दस्तावेज|डॉक्युमेंटस|पेपर)',
+                r'दस्तावेज.*(दिखाओ|देखने)',
+            ],
+            'marathi': [
+                r'कागदपत्रे.*दाखवा',
+                r'डॉक्युमेंटस.*पहायचे',
+            ],
+            'english': [
+                r'(my|show).*document(s)?',
+                r'view.*document(s)?',
+                r'upload.*doc(s)?',
             ]
         },
         Intent.HELP: {
@@ -165,7 +185,7 @@ class IntentParser:
                                 best_match = intent
                             break
         
-        if best_match:
+        if best_match is not None:
             return ParsedIntent(
                 intent=best_match,
                 confidence=best_confidence,
@@ -187,7 +207,7 @@ class IntentParser:
         
         # Extract scheme name if mentioned
         scheme_patterns = [
-            r'(pm[-\s]?kisan|पीएम[-\s]?किसान)',
+            r'(pm[-\s]?kisan|पीएम[-\s]?किसान|प्रधानमंत्री[-\s]?किसान)',
             r'(fasal bima|फसल बीमा)',
             r'(kisan credit|किसान क्रेडिट)',
             r'(soil health|मृदा स्वास्थ्य)',
@@ -255,6 +275,11 @@ class ResponseGenerator:
                 'success': 'You have {count} applications. {status_summary}',
                 'no_applications': 'You have not submitted any applications yet.',
             }
+        },
+        Intent.VIEW_DOCUMENTS: {
+            'hindi': 'आपके पास {count} दस्तावेज अपलोड हैं। आप इन्हें यहां देख सकते हैं।',
+            'marathi': 'तुमच्याकडे {count} कागदपत्रे अपलोड आहेत. तुम्ही ती येथे पाहू शकता.',
+            'english': 'You have {count} documents uploaded. You can view them here.',
         },
         Intent.HELP: {
             'hindi': 'आप मुझसे कह सकते हैं: "मेरी योजनाएं दिखाओ", "आवेदन करो", या "स्थिति बताओ"।',
