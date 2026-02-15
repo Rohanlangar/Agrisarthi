@@ -96,8 +96,17 @@ class VoiceService:
             }
 
             with open(audio_file_path, "rb") as audio_file:
+                # Determine MIME type explicitly to avoid "Invalid file type: None" error
+                if audio_file_path.endswith('.wav'):
+                    mime_type = 'audio/wav'
+                elif audio_file_path.endswith('.mp3'):
+                    mime_type = 'audio/mpeg'
+                else:
+                    # Default to x-m4a for m4a/aac files (Sarvam supports this)
+                    mime_type = 'audio/x-m4a'
+
                 files = {
-                    "file": (os.path.basename(audio_file_path), audio_file),
+                    "file": (os.path.basename(audio_file_path), audio_file, mime_type),
                 }
                 data = {
                     "model": "saaras:v3",
@@ -113,6 +122,7 @@ class VoiceService:
                     data=data,
                     timeout=30,
                 )
+
 
             if response.status_code != 200:
                 logger.error(f"STT Error: HTTP {response.status_code} - {response.text[:500]}")
