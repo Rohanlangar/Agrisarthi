@@ -17,7 +17,9 @@ class OTPService:
     @staticmethod
     def generate_otp(length=6):
         """Generate a random numeric OTP"""
-        return ''.join(random.choices(string.digits, k=length))
+        # For demo/testing, use fixed OTP to avoid console spam
+        return '123456'
+        # return ''.join(random.choices(string.digits, k=length))
     
     @classmethod
     def create_otp(cls, phone: str) -> str:
@@ -46,7 +48,7 @@ class OTPService:
         
         # In production, send OTP via SMS here
         # For hackathon, we'll mock this
-        print(f"[MOCK SMS] OTP for {phone}: {otp_code}")
+        # print(f"[MOCK SMS] OTP for {phone}: {otp_code}") # Removed console log
         
         return otp_code
     
