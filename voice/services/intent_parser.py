@@ -250,16 +250,22 @@ class ResponseGenerator:
                 'success': '{scheme_name} के लिए आवेदन सफलतापूर्वक जमा हुआ।',
                 'already_applied': 'आपने पहले से इस योजना के लिए आवेदन किया है।',
                 'not_eligible': 'आप इस योजना के लिए पात्र नहीं हैं।',
+                'scheme_not_found': 'मुझे {scheme_name} आपकी पात्र योजनाओं में नहीं मिली।',
+                'specify_scheme': 'आप किस योजना के लिए आवेदन करना चाहते हैं? आप इनके लिए आवेदन कर सकते हैं: {schemes}',
             },
             'marathi': {
                 'success': '{scheme_name} साठी अर्ज यशस्वीरित्या सबमिट झाला.',
                 'already_applied': 'तुम्ही आधीच या योजनेसाठी अर्ज केला आहे.',
                 'not_eligible': 'तुम्ही या योजनेसाठी पात्र नाही.',
+                'scheme_not_found': 'मला {scheme_name} आपल्या पात्र योजनांमध्ये आढळली नाही.',
+                'specify_scheme': 'तुम्हाला कोणत्या योजनेसाठी अर्ज करायचा आहे? तुम्ही यासाठी अर्ज करू शकता: {schemes}',
             },
             'english': {
                 'success': 'Application for {scheme_name} submitted successfully.',
                 'already_applied': 'You have already applied for this scheme.',
                 'not_eligible': 'You are not eligible for this scheme.',
+                'scheme_not_found': ' I could not find {scheme_name} in your eligible schemes.',
+                'specify_scheme': 'Which scheme do you want to apply for? You can apply for: {schemes}',
             }
         },
         Intent.CHECK_STATUS: {

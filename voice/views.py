@@ -300,16 +300,46 @@ class VoiceProcessView(APIView):
                 'action': None
             }
         
-        # Try to match scheme_mention if provided, otherwise use first eligible
-        scheme_data = eligible[0]
+        # Try to match scheme_mention if provided
+        target_scheme_data = None
+        
         if scheme_mention:
             for s in eligible:
                 if scheme_mention.lower() in s.get('name', '').lower() or \
                    scheme_mention.lower() in s.get('name_localized', '').lower():
-                    scheme_data = s
+                    target_scheme_data = s
                     break
+            
+            if not target_scheme_data:
+                # Scheme mentioned but not found in eligible list
+                response = ResponseGenerator.get_response(
+                    Intent.APPLY_SCHEME, language, 'scheme_not_found',
+                    scheme_name=scheme_mention
+                )
+                return {
+                    'response': response,
+                    'speech_text': response,
+                    'action': None
+                }
+        else:
+            # No scheme mentioned
+            # List first 3 eligible schemes and ask user to pick one
+            scheme_names = [s['name_localized'] for s in eligible[:3]]
+            schemes_text = ', '.join(scheme_names)
+            
+            response = ResponseGenerator.get_response(
+                Intent.APPLY_SCHEME, language, 'specify_scheme',
+                schemes=schemes_text
+            )
+            return {
+                'response': response,
+                'speech_text': response,
+                'action': None
+            }
         
-        scheme = scheme_data['scheme']
+        # Proceed with the found scheme
+        scheme = target_scheme_data['scheme']
+        scheme_data = target_scheme_data
         
         # Check if already applied
         existing = Application.objects.filter(farmer=farmer, scheme=scheme).first()
