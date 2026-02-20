@@ -9,7 +9,7 @@ from rest_framework.permissions import IsAuthenticated, AllowAny
 
 from .models import Scheme
 from .serializers import SchemeSerializer, SchemeListSerializer, EligibleSchemeSerializer
-from .services.eligibility_engine import EligibilityEngine
+from .services.eligibility_engine import EligibilityEngine, get_eligible_schemes_for_farmer
 from core.authentication import get_farmer_from_token
 
 
@@ -41,22 +41,23 @@ class EligibleSchemesView(APIView):
                 }
             }, status=status.HTTP_400_BAD_REQUEST)
         
-        # Get eligible schemes
-        eligible_schemes = EligibilityEngine.get_eligible_schemes(farmer)
+        # Get eligible schemes using Decision Table engine
+        eligible_scheme_objs = get_eligible_schemes_for_farmer(farmer)
         
         # Prepare response with localized names
         response_data = []
-        for scheme_data in eligible_schemes:
+        for scheme in eligible_scheme_objs:
+            eligibility = EligibilityEngine.check_eligibility(farmer, scheme)
             response_data.append({
-                'scheme_id': scheme_data['scheme_id'],
-                'name': scheme_data['name'],
-                'name_localized': scheme_data['name_localized'],
-                'description': scheme_data['description'],
-                'benefit_amount': scheme_data['benefit_amount'],
-                'benefit_display': f"₹{scheme_data['benefit_amount']:,.2f}",
-                'deadline': scheme_data['deadline'],
-                'can_apply': scheme_data['can_apply'],
-                'missing_documents': scheme_data['eligibility']['missing_documents']
+                'scheme_id': str(scheme.id),
+                'name': scheme.name,
+                'name_localized': scheme.get_localized_name(farmer.language),
+                'description': scheme.get_localized_description(farmer.language),
+                'benefit_amount': float(scheme.benefit_amount),
+                'benefit_display': f"₹{float(scheme.benefit_amount):,.2f}",
+                'deadline': str(scheme.deadline) if scheme.deadline else None,
+                'can_apply': eligibility['has_all_documents'],
+                'missing_documents': eligibility['missing_documents']
             })
         
         return Response({
