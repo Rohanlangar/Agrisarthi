@@ -178,6 +178,8 @@ GROQ_API_KEY = config('GROQ_API_KEY', default='')
 OPENAI_API_KEY = config('OPENAI_API_KEY', default='')
 SARVAM_API_KEY = config('SARVAM_API_KEY', default='')
 
+# OCR: Uses EasyOCR (free, offline, no API keys needed)
+
 # OTP Settings
 OTP_EXPIRY_MINUTES = 5
 OTP_LENGTH = 6

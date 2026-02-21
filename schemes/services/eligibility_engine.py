@@ -1,288 +1,202 @@
 """
-Schemes App - Enhanced Eligibility Engine
-Robust rule-based matching with comprehensive farmer profile fields
+Schemes App - Decision Table Eligibility Engine
+Evaluates SchemeRule rows to determine farmer eligibility.
+Replaces the old JSON-based EligibilityEngine.
 """
 
-from typing import List, Dict, Any, Optional
-from decimal import Decimal
+import logging
+from typing import List, Dict, Any
+from decimal import Decimal, InvalidOperation
 
+logger = logging.getLogger(__name__)
+
+
+# ============================================================
+# Core Decision Table Function (required by spec)
+# ============================================================
+
+def get_eligible_schemes_for_farmer(farmer):
+    """
+    Returns a list of Scheme objects for which the farmer
+    satisfies ALL associated SchemeRule rows.
+
+    Performance:
+      - Single DB query with prefetch_related (no N+1).
+      - Early exit on first failing rule per scheme.
+    """
+    from schemes.models import Scheme
+
+    schemes = (
+        Scheme.objects
+        .filter(is_active=True)
+        .prefetch_related('schemerule_set')
+    )
+
+    eligible = []
+
+    for scheme in schemes:
+        # Skip expired schemes
+        if scheme.is_expired:
+            continue
+
+        rules = scheme.schemerule_set.all()  # already prefetched
+
+        # Schemes with NO rules are available to everyone
+        if not rules:
+            eligible.append(scheme)
+            continue
+
+        # ALL rules must pass (early exit on first failure)
+        is_eligible = True
+        for rule in rules:
+            if not _evaluate_rule(farmer, rule):
+                is_eligible = False
+                break  # early exit
+
+        if is_eligible:
+            eligible.append(scheme)
+
+    return eligible
+
+
+# ============================================================
+# Rule Evaluator
+# ============================================================
+
+def _evaluate_rule(farmer, rule) -> bool:
+    """
+    Evaluate a single SchemeRule against a farmer instance.
+    Returns True if the farmer passes this rule, False otherwise.
+    """
+    field_name = rule.field
+    operator = rule.operator.strip()
+    rule_value = rule.value.strip()
+
+    # Safely get the farmer attribute
+    if not hasattr(farmer, field_name):
+        logger.warning(
+            "SchemeRule references unknown farmer field '%s' — skipping rule",
+            field_name
+        )
+        return True  # skip unknown fields gracefully
+
+    farmer_value = getattr(farmer, field_name)
+
+    try:
+        if operator == 'IN':
+            return _evaluate_in(farmer_value, rule_value)
+        elif operator in ('<=', '>=', '=='):
+            return _evaluate_comparison(farmer_value, operator, rule_value)
+        else:
+            logger.warning(
+                "Unsupported operator '%s' in SchemeRule — skipping rule",
+                operator
+            )
+            return True  # unknown operator → skip gracefully
+    except Exception as e:
+        logger.error(
+            "Error evaluating rule (field=%s, op=%s, val=%s): %s",
+            field_name, operator, rule_value, e
+        )
+        return False  # on error, treat as ineligible
+
+
+def _evaluate_in(farmer_value, rule_value: str) -> bool:
+    """
+    IN operator: rule_value is comma-separated.
+    Example: rule_value = "Maharashtra,UP"
+    """
+    allowed = [v.strip().lower() for v in rule_value.split(',')]
+    return str(farmer_value).strip().lower() in allowed
+
+
+def _evaluate_comparison(farmer_value, operator: str, rule_value: str) -> bool:
+    """
+    Numeric/string comparison for <=, >=, ==.
+    Attempts numeric comparison first; falls back to string compare.
+    """
+    # Try numeric comparison
+    try:
+        numeric_farmer = Decimal(str(farmer_value))
+        numeric_rule = Decimal(rule_value)
+
+        if operator == '<=':
+            return numeric_farmer <= numeric_rule
+        elif operator == '>=':
+            return numeric_farmer >= numeric_rule
+        elif operator == '==':
+            return numeric_farmer == numeric_rule
+    except (InvalidOperation, ValueError, TypeError):
+        pass
+
+    # Handle boolean fields (e.g., is_bpl, has_irrigation)
+    if isinstance(farmer_value, bool):
+        rule_bool = rule_value.strip().lower() in ('true', '1', 'yes')
+        if operator == '==':
+            return farmer_value == rule_bool
+        return False  # <= / >= don't make sense for booleans
+
+    # Fallback: string comparison (case-insensitive)
+    str_farmer = str(farmer_value).strip().lower()
+    str_rule = rule_value.strip().lower()
+
+    if operator == '==':
+        return str_farmer == str_rule
+    elif operator == '<=':
+        return str_farmer <= str_rule
+    elif operator == '>=':
+        return str_farmer >= str_rule
+
+    return False
+
+
+# ============================================================
+# Backward-compatible wrapper class
+# (keeps voice/views.py, applications/views.py working)
+# ============================================================
 
 class EligibilityEngine:
     """
-    Enhanced rule-based eligibility matching engine.
-    Matches farmer profile against scheme eligibility rules.
-    
-    Supported Rules:
-    - min_land_size / max_land_size
-    - allowed_states / allowed_districts
-    - allowed_crop_types
-    - allowed_farming_categories (NEW)
-    - allowed_social_categories (NEW)
-    - allowed_genders (NEW)
-    - min_age / max_age (NEW)
-    - max_annual_income (NEW)
-    - requires_irrigation (NEW)
-    - requires_bpl (NEW)
-    - allowed_land_types (NEW)
+    Backward-compatible wrapper around the Decision Table engine.
+    Existing callers can keep using EligibilityEngine.get_eligible_schemes()
+    and EligibilityEngine.check_eligibility() without changes.
     """
-    
+
     @classmethod
     def check_eligibility(cls, farmer, scheme) -> Dict[str, Any]:
         """
-        Check if a farmer is eligible for a specific scheme.
-        
-        Args:
-            farmer: Farmer model instance
-            scheme: Scheme model instance
-        
-        Returns:
-            Dict with eligibility result and details
+        Check if a farmer is eligible for a single scheme
+        using its SchemeRule rows.
         """
-        rules = scheme.eligibility_rules or {}
-        required_docs = scheme.required_documents or []
-        
+        rules = scheme.schemerule_set.all()
+
         matched_rules = []
         failed_rules = []
-        
-        # ==========================================
-        # FARMING CATEGORY RULES (Most Important!)
-        # ==========================================
-        if 'allowed_farming_categories' in rules and rules['allowed_farming_categories']:
-            allowed_categories = [c.lower() for c in rules['allowed_farming_categories']]
-            farmer_category = getattr(farmer, 'farming_category', 'crop_farming') or 'crop_farming'
-            
-            if farmer_category.lower() in allowed_categories:
-                matched_rules.append({
-                    'rule': 'allowed_farming_categories',
-                    'message': f'Farming category {farmer_category} is eligible'
-                })
+
+        for rule in rules:
+            passed = _evaluate_rule(farmer, rule)
+            entry = {
+                'rule': f"{rule.field} {rule.operator} {rule.value}",
+                'field': rule.field,
+                'message': rule.message or f"{rule.field} {rule.operator} {rule.value}"
+            }
+            if passed:
+                matched_rules.append(entry)
             else:
-                failed_rules.append({
-                    'rule': 'allowed_farming_categories',
-                    'message': f'This scheme is for {", ".join(rules["allowed_farming_categories"])} only'
-                })
-        
-        # ==========================================
-        # LAND SIZE RULES
-        # ==========================================
-        if 'min_land_size' in rules:
-            min_size = Decimal(str(rules['min_land_size']))
-            if farmer.land_size >= min_size:
-                matched_rules.append({
-                    'rule': 'min_land_size',
-                    'message': f'Land size {farmer.land_size} acres meets minimum {min_size} acres'
-                })
-            else:
-                failed_rules.append({
-                    'rule': 'min_land_size',
-                    'message': f'Land size {farmer.land_size} acres is less than required {min_size} acres'
-                })
-        
-        if 'max_land_size' in rules:
-            max_size = Decimal(str(rules['max_land_size']))
-            if farmer.land_size <= max_size:
-                matched_rules.append({
-                    'rule': 'max_land_size',
-                    'message': f'Land size {farmer.land_size} acres is within maximum {max_size} acres'
-                })
-            else:
-                failed_rules.append({
-                    'rule': 'max_land_size',
-                    'message': f'Land size {farmer.land_size} acres exceeds maximum {max_size} acres'
-                })
-        
-        # ==========================================
-        # LOCATION RULES
-        # ==========================================
-        if 'allowed_states' in rules and rules['allowed_states']:
-            allowed_states = [s.lower() for s in rules['allowed_states']]
-            if farmer.state.lower() in allowed_states:
-                matched_rules.append({
-                    'rule': 'allowed_states',
-                    'message': f'State {farmer.state} is eligible'
-                })
-            else:
-                failed_rules.append({
-                    'rule': 'allowed_states',
-                    'message': f'State {farmer.state} is not in eligible states'
-                })
-        
-        if 'allowed_districts' in rules and rules['allowed_districts']:
-            allowed_districts = [d.lower() for d in rules['allowed_districts']]
-            if farmer.district.lower() in allowed_districts:
-                matched_rules.append({
-                    'rule': 'allowed_districts',
-                    'message': f'District {farmer.district} is eligible'
-                })
-            else:
-                failed_rules.append({
-                    'rule': 'allowed_districts',
-                    'message': f'District {farmer.district} is not in eligible districts'
-                })
-        
-        # ==========================================
-        # CROP TYPE RULES
-        # ==========================================
-        if 'allowed_crop_types' in rules and rules['allowed_crop_types']:
-            allowed_crops = [c.lower() for c in rules['allowed_crop_types']]
-            if farmer.crop_type.lower() in allowed_crops:
-                matched_rules.append({
-                    'rule': 'allowed_crop_types',
-                    'message': f'Crop type {farmer.crop_type} is eligible'
-                })
-            else:
-                failed_rules.append({
-                    'rule': 'allowed_crop_types',
-                    'message': f'Crop type {farmer.crop_type} is not eligible for this scheme'
-                })
-        
-        # ==========================================
-        # SOCIAL CATEGORY RULES (NEW)
-        # ==========================================
-        if 'allowed_social_categories' in rules and rules['allowed_social_categories']:
-            allowed_categories = [c.lower() for c in rules['allowed_social_categories']]
-            farmer_social = getattr(farmer, 'social_category', 'general') or 'general'
-            
-            if farmer_social.lower() in allowed_categories:
-                matched_rules.append({
-                    'rule': 'allowed_social_categories',
-                    'message': f'Social category {farmer_social.upper()} is eligible'
-                })
-            else:
-                failed_rules.append({
-                    'rule': 'allowed_social_categories',
-                    'message': f'This scheme is for {", ".join([c.upper() for c in rules["allowed_social_categories"]])} categories only'
-                })
-        
-        # ==========================================
-        # GENDER RULES (NEW)
-        # ==========================================
-        if 'allowed_genders' in rules and rules['allowed_genders']:
-            allowed_genders = [g.lower() for g in rules['allowed_genders']]
-            farmer_gender = getattr(farmer, 'gender', 'male') or 'male'
-            
-            if farmer_gender.lower() in allowed_genders:
-                matched_rules.append({
-                    'rule': 'allowed_genders',
-                    'message': f'Gender requirement met'
-                })
-            else:
-                failed_rules.append({
-                    'rule': 'allowed_genders',
-                    'message': f'This scheme is for {", ".join(rules["allowed_genders"])} farmers only'
-                })
-        
-        # ==========================================
-        # AGE RULES (NEW)
-        # ==========================================
-        farmer_age = getattr(farmer, 'age', 30) or 30
-        
-        if 'min_age' in rules:
-            min_age = int(rules['min_age'])
-            if farmer_age >= min_age:
-                matched_rules.append({
-                    'rule': 'min_age',
-                    'message': f'Age {farmer_age} meets minimum {min_age} years'
-                })
-            else:
-                failed_rules.append({
-                    'rule': 'min_age',
-                    'message': f'Minimum age requirement is {min_age} years'
-                })
-        
-        if 'max_age' in rules:
-            max_age = int(rules['max_age'])
-            if farmer_age <= max_age:
-                matched_rules.append({
-                    'rule': 'max_age',
-                    'message': f'Age {farmer_age} is within maximum {max_age} years'
-                })
-            else:
-                failed_rules.append({
-                    'rule': 'max_age',
-                    'message': f'Maximum age limit is {max_age} years'
-                })
-        
-        # ==========================================
-        # INCOME RULES (NEW)
-        # ==========================================
-        if 'max_annual_income' in rules:
-            max_income = Decimal(str(rules['max_annual_income']))
-            farmer_income = getattr(farmer, 'annual_income', 0) or 0
-            
-            if Decimal(str(farmer_income)) <= max_income:
-                matched_rules.append({
-                    'rule': 'max_annual_income',
-                    'message': f'Income within eligible limit'
-                })
-            else:
-                failed_rules.append({
-                    'rule': 'max_annual_income',
-                    'message': f'Annual income exceeds maximum ₹{max_income:,.0f}'
-                })
-        
-        # ==========================================
-        # BPL REQUIREMENT (NEW)
-        # ==========================================
-        if 'requires_bpl' in rules and rules['requires_bpl']:
-            farmer_bpl = getattr(farmer, 'is_bpl', False)
-            
-            if farmer_bpl:
-                matched_rules.append({
-                    'rule': 'requires_bpl',
-                    'message': 'BPL requirement met'
-                })
-            else:
-                failed_rules.append({
-                    'rule': 'requires_bpl',
-                    'message': 'This scheme is for BPL families only'
-                })
-        
-        # ==========================================
-        # IRRIGATION REQUIREMENT (NEW)
-        # ==========================================
-        if 'requires_irrigation' in rules and rules['requires_irrigation']:
-            has_irrigation = getattr(farmer, 'has_irrigation', False)
-            
-            if has_irrigation:
-                matched_rules.append({
-                    'rule': 'requires_irrigation',
-                    'message': 'Irrigation facility available'
-                })
-            else:
-                failed_rules.append({
-                    'rule': 'requires_irrigation',
-                    'message': 'This scheme requires irrigation facility'
-                })
-        
-        # ==========================================
-        # LAND TYPE RULES (NEW)
-        # ==========================================
-        if 'allowed_land_types' in rules and rules['allowed_land_types']:
-            allowed_types = [t.lower() for t in rules['allowed_land_types']]
-            farmer_land_type = getattr(farmer, 'land_type', 'rainfed') or 'rainfed'
-            
-            if farmer_land_type.lower() in allowed_types:
-                matched_rules.append({
-                    'rule': 'allowed_land_types',
-                    'message': f'Land type {farmer_land_type} is eligible'
-                })
-            else:
-                failed_rules.append({
-                    'rule': 'allowed_land_types',
-                    'message': f'This scheme is for {", ".join(rules["allowed_land_types"])} land only'
-                })
-        
-        # ==========================================
-        # DOCUMENT CHECK
-        # ==========================================
-        from documents.models import Document
-        farmer_docs = Document.get_farmer_document_types(farmer)
-        missing_docs = [doc for doc in required_docs if doc not in farmer_docs]
-        
-        # Eligible if no rules failed
+                failed_rules.append(entry)
+
+        # Document check (keep existing behavior)
+        missing_docs = []
+        try:
+            from documents.models import Document
+            farmer_docs = Document.get_farmer_document_types(farmer)
+            required_docs = scheme.required_documents or []
+            missing_docs = [doc for doc in required_docs if doc not in farmer_docs]
+        except Exception:
+            pass
+
         is_eligible = len(failed_rules) == 0
-        
+
         return {
             'eligible': is_eligible,
             'matched_rules': matched_rules,
@@ -290,66 +204,76 @@ class EligibilityEngine:
             'missing_documents': missing_docs,
             'has_all_documents': len(missing_docs) == 0
         }
-    
+
     @classmethod
     def get_eligible_schemes(cls, farmer, schemes=None) -> List[Dict[str, Any]]:
         """
-        Get all eligible schemes for a farmer.
+        Get all eligible schemes for a farmer (with details).
         """
-        from schemes.models import Scheme
-        
         if schemes is None:
-            schemes = Scheme.objects.filter(is_active=True)
-        
-        eligible_schemes = []
-        
-        for scheme in schemes:
-            # Skip expired schemes
-            if scheme.is_expired:
-                continue
-            
-            result = cls.check_eligibility(farmer, scheme)
-            
-            if result['eligible']:
-                eligible_schemes.append({
-                    'scheme': scheme,
-                    'scheme_id': str(scheme.id),
-                    'name': scheme.name,
-                    'name_localized': scheme.get_localized_name(farmer.language),
-                    'description': scheme.get_localized_description(farmer.language),
-                    'benefit_amount': float(scheme.benefit_amount),
-                    'deadline': str(scheme.deadline) if scheme.deadline else None,
-                    'eligibility': result,
-                    'can_apply': result['has_all_documents']
-                })
-        
-        return eligible_schemes
-    
+            eligible_scheme_objs = get_eligible_schemes_for_farmer(farmer)
+        else:
+            # filter the given queryset through rule evaluation
+            eligible_scheme_objs = []
+            for scheme in schemes:
+                if scheme.is_expired:
+                    continue
+                rules = scheme.schemerule_set.all()
+                if not rules or all(_evaluate_rule(farmer, r) for r in rules):
+                    eligible_scheme_objs.append(scheme)
+
+        result = []
+        for scheme in eligible_scheme_objs:
+            eligibility = cls.check_eligibility(farmer, scheme)
+            result.append({
+                'scheme': scheme,
+                'scheme_id': str(scheme.id),
+                'name': scheme.name,
+                'name_localized': scheme.get_localized_name(
+                    getattr(farmer, 'language', 'english')
+                ),
+                'description': scheme.get_localized_description(
+                    getattr(farmer, 'language', 'english')
+                ),
+                'benefit_amount': float(scheme.benefit_amount),
+                'deadline': str(scheme.deadline) if scheme.deadline else None,
+                'eligibility': eligibility,
+                'can_apply': eligibility['has_all_documents']
+            })
+
+        return result
+
     @classmethod
     def get_all_schemes_with_eligibility(cls, farmer, schemes=None) -> List[Dict[str, Any]]:
         """
         Get all schemes with eligibility status for a farmer.
         """
         from schemes.models import Scheme
-        
+
         if schemes is None:
-            schemes = Scheme.objects.filter(is_active=True)
-        
+            schemes = (
+                Scheme.objects
+                .filter(is_active=True)
+                .prefetch_related('schemerule_set')
+            )
+
         all_schemes = []
-        
         for scheme in schemes:
             result = cls.check_eligibility(farmer, scheme)
-            
             all_schemes.append({
                 'scheme_id': str(scheme.id),
                 'name': scheme.name,
-                'name_localized': scheme.get_localized_name(farmer.language),
-                'description': scheme.get_localized_description(farmer.language),
+                'name_localized': scheme.get_localized_name(
+                    getattr(farmer, 'language', 'english')
+                ),
+                'description': scheme.get_localized_description(
+                    getattr(farmer, 'language', 'english')
+                ),
                 'benefit_amount': float(scheme.benefit_amount),
                 'deadline': str(scheme.deadline) if scheme.deadline else None,
                 'is_eligible': result['eligible'],
                 'eligibility_details': result,
                 'is_expired': scheme.is_expired
             })
-        
+
         return all_schemes

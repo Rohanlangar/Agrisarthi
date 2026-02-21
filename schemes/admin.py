@@ -3,7 +3,14 @@ Schemes App - Admin Configuration
 """
 
 from django.contrib import admin
-from .models import Scheme
+from .models import Scheme, SchemeRule
+
+
+class SchemeRuleInline(admin.TabularInline):
+    """Inline admin for SchemeRule — edit rules directly on the Scheme page."""
+    model = SchemeRule
+    extra = 1
+    fields = ['field', 'operator', 'value', 'message']
 
 
 @admin.register(Scheme)
@@ -13,6 +20,7 @@ class SchemeAdmin(admin.ModelAdmin):
     search_fields = ['name', 'name_hindi', 'description']
     readonly_fields = ['id', 'created_at', 'updated_at']
     ordering = ['-created_at']
+    inlines = [SchemeRuleInline]
     
     fieldsets = (
         ('Basic Info', {
@@ -24,9 +32,10 @@ class SchemeAdmin(admin.ModelAdmin):
         ('Benefit', {
             'fields': ('benefit_amount', 'deadline')
         }),
-        ('Eligibility', {
+        ('Eligibility (Legacy JSON)', {
             'fields': ('eligibility_rules', 'required_documents'),
-            'classes': ('collapse',)
+            'classes': ('collapse',),
+            'description': 'Legacy JSON rules. Use the Scheme Rules inline below instead.'
         }),
         ('Status', {
             'fields': ('is_active', 'created_by', 'created_at', 'updated_at')
@@ -37,3 +46,11 @@ class SchemeAdmin(admin.ModelAdmin):
         if obj:  # Editing existing object
             return self.readonly_fields
         return ['id', 'created_at', 'updated_at']
+
+
+@admin.register(SchemeRule)
+class SchemeRuleAdmin(admin.ModelAdmin):
+    list_display = ['scheme', 'field', 'operator', 'value', 'message']
+    list_filter = ['field', 'operator']
+    search_fields = ['scheme__name', 'field', 'value']
+    ordering = ['scheme__name', 'field']
